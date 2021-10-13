@@ -1,0 +1,11 @@
+#!/bin/bash
+
+GSG_CONTAINER="genscenegraphs_user"
+
+# start GSG_CONTAINER if it's not running
+[ ! "$(docker ps | grep ${GSG_CONTAINER})" ] && docker start ${GSG_CONTAINER}
+
+# run julia REPL in container
+docker exec -it ${GSG_CONTAINER} /bin/bash -c "cd /julia_projects/MyProject && \
+    /julia_projects/MyProject/deps/GenSceneGraphs.jl/container_scripts/myproject_julia \
+    --project=/julia_projects/MyProject $@"
