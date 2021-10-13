@@ -1,8 +1,7 @@
-# Object-based SLAM, from a Probabilistic Programming Language Perspective
+# Object-based Bayesian SLAM
 
 ## Desiderata
-   - implementable with a decent laptop and a camera
-   - opinionated, all components implemented in Gen where possible
+   - Bayesian, and in particular implemented in a probabilistic programming language
 
 ## Setup
 1. Clone the repo
