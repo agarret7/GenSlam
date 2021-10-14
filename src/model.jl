@@ -9,6 +9,8 @@ S = GenSceneGraphs
 include("gaussian_vmf.jl")
 
 
+AGENT_SHAPE = S.Cylinder(0.1, 0.3)
+TEST_BOX_SHAPE = S.Box(0.1, 0.1, 0.1)
 Bounds = @NamedTuple{xmin::Real, xmax::Real, ymin::Real, ymax::Real, zmin::Real, zmax::Real}
 
 @with_kw mutable struct Hypers
@@ -73,11 +75,11 @@ end
 @gen function static_model(hypers)
     agent_pose = agent ~ init_agent_pose(hypers)
     g = S.SceneGraph()
-    S.addObject!(g, :agent, S.Box(0.01, 0.01, 0.01))
+    S.addObject!(g, :agent, AGENT_SHAPE)
     S.setPose!(g, :agent, agent_pose)
     for i in 1:hypers.num_objects
         pose = {(:obj, i)} ~ init_object_pose(hypers)
-        S.addObject!(g, (:obj, i), S.Box(0.2,0.2,0.2))
+        S.addObject!(g, (:obj, i), TEST_BOX_SHAPE)
         S.setPose!(g, (:obj, i), pose)
     end
     {:obs} ~ obs_model(g, hypers)
@@ -106,33 +108,38 @@ end
 
 steps = Gen.Unfold(step_forward)
 
-@gen (static) function model(num_time_steps::Int, hypers)
+@gen function model(num_time_steps::Int, hypers::Hypers)
     gs ~ steps(num_time_steps, nothing, hypers)
     return MetaDiGraph[gs...]
 end
 
-function sample_scene(num_objects::Int)
-    # construct the agent
-    agent_pose = S.Pose(0.5, -0.5, 0, S.IDENTITY_ORN)
+function make_agent_view(agent_pose::S.Pose)
     agent_camera = S.cameraConfigFromAngleAspect(
         cameraEyePose = agent_pose,
-        fovDegrees = 42.5,
+        fovDegrees = 72.5,
         aspect = 1,
         nearVal = 0.01,
         farVal = 100.0,
     )
     agent_view = S.ViewSpec(camera=agent_camera)
+    return agent_view
+end
+
+function sample_scene(num_objects::Int)
+    # construct the agent
+    agent_pose = S.Pose(0.5, -0.5, 0, S.IDENTITY_ORN)
+    agent_view = make_agent_view(agent_pose)
 
     # construct the scene
     g = S.SceneGraph()
     S.setSuggestedView!(g, agent_view)
-    S.addObject!(g, :agent, S.Box(0.01, 0.01, 0.01))
+    S.addObject!(g, :agent, AGENT_SHAPE)
     S.setPose!(g, :agent, agent_pose)
     for i in 1:num_objects
         x = uniform(0, 1)
         y = uniform(0, 1)
         pose = S.Pose(x, y, -0.1, S.IDENTITY_ORN)
-        S.addObject!(g, (:obj, i), S.Box(0.1,0.1,0.1))
+        S.addObject!(g, (:obj, i), TEST_BOX_SHAPE)
         S.setPose!(g, (:obj, i), pose)
     end
     return g, agent_view
