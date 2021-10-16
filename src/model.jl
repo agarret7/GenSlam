@@ -12,6 +12,7 @@ include("gaussian_vmf.jl")
 AGENT_SHAPE = S.Cylinder(0.1, 0.3)
 TEST_BOX_SHAPE = S.Box(0.1, 0.1, 0.1)
 Bounds = @NamedTuple{xmin::Real, xmax::Real, ymin::Real, ymax::Real, zmin::Real, zmax::Real}
+get_num_objects(trace) = Gen.get_args(trace)[2].num_objects
 
 @with_kw mutable struct Hypers
     # static params
@@ -73,7 +74,7 @@ end
 end
 
 @gen function static_model(hypers)
-    agent_pose = agent ~ init_agent_pose(hypers)
+    agent_pose = {:agent} ~ init_agent_pose(hypers)
     g = S.SceneGraph()
     S.addObject!(g, :agent, AGENT_SHAPE)
     S.setPose!(g, :agent, agent_pose)
@@ -91,11 +92,12 @@ end
 ### Dynamic Model ###
 #####################
 
-@gen function agent_trajectory(pose::S.Pose, hypers::Hypers)::S.Pose
-    x ~ normal(pose.pos[1], hypers.floating_pos_drift_length)
-    y ~ normal(pose.pos[2], hypers.floating_pos_drift_length)
-    z ~ normal(pose.pos[3], hypers.floating_pos_drift_length)
-    rot ~ vmf_rot3(pose.orientation, hypers.floating_rot_drift_conc)
+@gen function step_agent_forward(pose::S.Pose, hypers::Hypers)::S.Pose
+    # TODO add velocity model, truncated normal
+    x ~ normal(pose.pos[1], hypers.pos_drift_length)
+    y ~ normal(pose.pos[2], hypers.pos_drift_length)
+    z ~ normal(pose.pos[3], hypers.pos_drift_length)
+    rot ~ vmf_rot3(pose.orientation, hypers.rot_drift_conc)
     return S.Pose(x, y, z, rot)
 end
 
@@ -104,43 +106,29 @@ end
     prev_g::Union{MetaDiGraph,Nothing},
     hypers::Hypers,
 )
+    if prev_g == nothing  ################################ initial time step
+        g = S.SceneGraph()
+        for i in 1:hypers.num_objects
+            pose = {(:obj, i)} ~ init_object_pose(hypers)
+            S.addObject!(g, (:obj, i), TEST_BOX_SHAPE)
+            S.setPose!(g, (:obj, i), pose)
+        end
+        S.addObject!(g, :agent, AGENT_SHAPE)
+        agent_pose = {:agent} ~ init_agent_pose(hypers)
+    else  ################################################ step dynamics forward
+        g = deepcopy(prev_g)
+        agent_pose = {:agent} ~ step_agent_forward(S.getAbsolutePose(prev_g, :agent), hypers)
+    end
+    S.setPose!(g, :agent, agent_pose)
+    {:obs} ~ obs_model(g, hypers)
+    return g
 end
 
 steps = Gen.Unfold(step_forward)
 
 @gen function model(num_time_steps::Int, hypers::Hypers)
+    @assert !isnothing(hypers.pos_drift_length)
+    @assert !isnothing(hypers.rot_drift_conc)
     gs ~ steps(num_time_steps, nothing, hypers)
     return MetaDiGraph[gs...]
-end
-
-function make_agent_view(agent_pose::S.Pose)
-    agent_camera = S.cameraConfigFromAngleAspect(
-        cameraEyePose = agent_pose,
-        fovDegrees = 72.5,
-        aspect = 1,
-        nearVal = 0.01,
-        farVal = 100.0,
-    )
-    agent_view = S.ViewSpec(camera=agent_camera)
-    return agent_view
-end
-
-function sample_scene(num_objects::Int)
-    # construct the agent
-    agent_pose = S.Pose(0.5, -0.5, 0, S.IDENTITY_ORN)
-    agent_view = make_agent_view(agent_pose)
-
-    # construct the scene
-    g = S.SceneGraph()
-    S.setSuggestedView!(g, agent_view)
-    S.addObject!(g, :agent, AGENT_SHAPE)
-    S.setPose!(g, :agent, agent_pose)
-    for i in 1:num_objects
-        x = uniform(0, 1)
-        y = uniform(0, 1)
-        pose = S.Pose(x, y, -0.1, S.IDENTITY_ORN)
-        S.addObject!(g, (:obj, i), TEST_BOX_SHAPE)
-        S.setPose!(g, (:obj, i), pose)
-    end
-    return g, agent_view
 end
