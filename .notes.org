@@ -1,11 +1,11 @@
-* Tasks
+* Stage 1 Tasks - Basic Algorithm
 ** DONE project dependencies
-   CLOSED: [2021-10-13 Wed 13:00]
+   CLOSED: [2021-10-13 Wed 20:23]
 ** DONE static model
    CLOSED: [2021-10-13 Wed 15:24]
 ** DONE static inference
    CLOSED: [2021-10-13 Wed 15:24]
-** DONE visualization
+** DONE initial visualization
    CLOSED: [2021-10-14 Thu 16:09]
 *** DONE take a trace, render top-down and corner view of estimated/ground truth global positions
     CLOSED: [2021-10-14 Thu 15:54]
@@ -23,6 +23,11 @@
    CLOSED: [2021-10-16 Sat 14:38]
 ** DONE dynamic inference
    CLOSED: [2021-10-16 Sat 14:39]
+
+* Stage 2 Tasks - Visualization and Presentation
+** DOING replace GenSceneGraphs dependency with PoseComposition dependency
+** TODO install jupyter-ros
+** TODO ...
 ** TODO presentations
 *** TODO blog post
 *** TODO slideshow
