@@ -4,8 +4,6 @@ import GenDirectionalStats: uniform_rot3
 import Parameters: @with_kw
 import PoseComposition: Pose
 
-include("gaussian_vmf.jl")
-
 
 Bounds = @NamedTuple{xmin::Real, xmax::Real, ymin::Real, ymax::Real, zmin::Real, zmax::Real}
 get_num_objects(trace) = Gen.get_args(trace)[2].num_objects
@@ -57,9 +55,11 @@ end
 end
 
 @gen function obs_model(poses::Vector{Pose}, hypers::Hypers)
+    poses = deepcopy(poses)
     agent_pose = pop!(poses)
     observed_poses = Pose[]
-    for (name, pose) in poses
+    for (i, pose) in enumerate(poses)
+        name = (:obj, i)
         rel_pose = pose / agent_pose
         observed_pose = {name} ~ gaussianVMF(rel_pose, hypers.obs_pos_stdev, hypers.obs_rot_conc)
         push!(observed_poses, observed_pose)
@@ -75,7 +75,7 @@ end
     end
     agent_pose = {:agent} ~ init_agent_pose(hypers)
     push!(poses, agent_pose)
-    {:obs} ~ obs_model(g, hypers)
+    {:obs} ~ obs_model(poses, hypers)
     return poses
 end
 
@@ -98,19 +98,20 @@ end
     prev_poses::Union{Vector{Pose},Nothing},
     hypers::Hypers,
 )
-    if prev_g == nothing  ################################ initial time step
+    if prev_poses == nothing  ################################ initial time step
         poses = Pose[]
         for i in 1:hypers.num_objects
             pose = {(:obj, i)} ~ init_object_pose(hypers)
             push!(poses, pose)
         end
         agent_pose = {:agent} ~ init_agent_pose(hypers)
-    else  ################################################ step dynamics forward
-        agent_pose = {:agent} ~ step_agent_forward(S.getAbsolutePose(prev_g, :agent), hypers)
+        push!(poses, agent_pose)
+    else  #################################################### step dynamics forward
+        poses = deepcopy(prev_poses)
+        poses[end] = {:agent} ~ step_agent_forward(prev_poses[end], hypers)
     end
-    push!(poses, agent_pose)
-    {:obs} ~ obs_model(g, hypers)
-    return g
+    {:obs} ~ obs_model(poses, hypers)
+    return poses
 end
 
 steps = Gen.Unfold(step_forward)
@@ -118,6 +119,6 @@ steps = Gen.Unfold(step_forward)
 @gen function model(num_time_steps::Int, hypers::Hypers)
     @assert !isnothing(hypers.pos_drift_length)
     @assert !isnothing(hypers.rot_drift_conc)
-    poses ~ steps(num_time_steps, nothing, hypers)
-    return Pose[poses...]
+    all_poses = scenes ~ steps(num_time_steps, nothing, hypers)
+    return Vector{Pose}[all_poses...]
 end

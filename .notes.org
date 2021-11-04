@@ -25,7 +25,8 @@
    CLOSED: [2021-10-16 Sat 14:39]
 
 * Stage 2 Tasks - Visualization and Presentation
-** DOING replace GenSceneGraphs dependency with PoseComposition dependency
+** DONE replace GenSceneGraphs dependency with PoseComposition dependency
+   CLOSED: [2021-11-03 Wed 21:58]
 ** TODO install jupyter-ros
 ** TODO ...
 ** TODO presentations

@@ -1,8 +1,6 @@
 import Gen: @gen, mh, normal
 import GenDirectionalStats: small_angle_random_axis_mh
-
-include("scene.jl")
-include("model.jl")
+import PoseComposition: Pose, IDENTITY_ORN
 
 
 @gen function random_walk_proposal(trace, addr, width)
@@ -39,32 +37,34 @@ function rejuvenation_kernel!(pf_state, t::Int; num_iters=500, verbose=false)
         for iter in 1:num_iters
             verbose && println("    Iter $iter")
             for i in 1:get_num_objects(trace)
-                trace = pose_kernel(trace, x -> :gs => 1 => (:obj, i) => x; scale=num_iters/(10*iter))
+                trace = pose_kernel(trace, x -> :scenes => 1 => (:obj, i) => x; scale=num_iters/(10*iter))
             end
-            trace = pos_kernel(trace, x -> :gs => t => :agent => x; scale=num_iters/(10*iter))
+            trace = pos_kernel(trace, x -> :scenes => t => :agent => x; scale=num_iters/(10*iter))
         end
         traces[i] = trace
     end
 end
 
-function do_smc(model, obs_gs::Vector{<:MetaDiGraph}, hypers::Hypers; num_particles::Int=1)
+function do_smc(model, all_obs_poses::Vector{<:AbstractVector{Pose}}, hypers::Hypers; num_particles::Int=1)
     # construct initial observation
     init_obs = Gen.choicemap()
-    for (name, pose) in S.floatingPosesOf(obs_gs[1])
-        init_obs[:gs => 1 => :obs => name] = pose
-        init_obs[:gs => 1 => :agent => :rot] = S.IDENTITY_ORN  # TODO remove me
+    for (i, pose) in enumerate(all_obs_poses[1])
+        name = (:obj, i)
+        init_obs[:scenes => 1 => :obs => name] = pose
+        init_obs[:scenes => 1 => :agent => :rot] = IDENTITY_ORN  # TODO remove me
     end
 
     pf_state = Gen.initialize_particle_filter(model, (1,hypers), init_obs, num_particles)
     println("Filtering 1")
     rejuvenation_kernel!(pf_state, 1; num_iters=3000)
 
-    for t in 2:length(obs_gs)
+    for t in 2:length(all_obs_poses)
         # construct new observation
         new_obs = Gen.choicemap()
-        for (name, pose) in S.floatingPosesOf(obs_gs[t])
-            new_obs[:gs => t => :obs => name] = pose
-            new_obs[:gs => t => :agent => :rot] = S.IDENTITY_ORN
+        for (i, pose) in enumerate(all_obs_poses[t])
+            name = (:obj, i)
+            new_obs[:scenes => t => :obs => name] = pose
+            new_obs[:scenes => t => :agent => :rot] = IDENTITY_ORN
         end
         println("Filtering $t")
 
