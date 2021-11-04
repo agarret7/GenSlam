@@ -1,19 +1,18 @@
-import GenSceneGraphs
 import Gen
 import GenDirectionalStats: vmf_rot3, Rot3
-S = GenSceneGraphs
+import PoseComposition: Pose, ⊗, ⦸
 
 
-struct GaussianVMF <: Gen.Distribution{S.Pose} end
+struct GaussianVMF <: Gen.Distribution{Pose} end
 const gaussianVMF = GaussianVMF()
 function Gen.random(
     ::GaussianVMF,
-    center::S.Pose,
+    center::Pose,
     positionStdev::Real,
     orientationKappa::Real,
-)::S.Pose
+)::Pose
     rot = Gen.random(vmf_rot3, Rot3(1.0, 0.0, 0.0, 0.0), orientationKappa)
-    offset = S.Pose(
+    offset = Pose(
         [
             Gen.normal(0, positionStdev),
             Gen.normal(0, positionStdev),
@@ -21,16 +20,16 @@ function Gen.random(
         ],
         rot,
     )
-    return S.:(⊗)(center, offset)
+    return (⊗)(center, offset)
 end
 function Gen.logpdf(
     ::GaussianVMF,
-    val::S.Pose,
-    center::S.Pose,
+    val::Pose,
+    center::Pose,
     positionStdev::Real,
     orientationKappa::Real,
 )
-    offset = S.:(⦸)(center, val)
+    offset = (⦸)(center, val)
     return +(
         Gen.logpdf(Gen.normal, offset.pos[1], 0, positionStdev),
         Gen.logpdf(Gen.normal, offset.pos[2], 0, positionStdev),
@@ -47,7 +46,7 @@ Gen.has_output_grad(::GaussianVMF) = false
 Gen.has_argument_grads(::GaussianVMF) = (false, false, false)
 function Gen.logpdf_grad(
     ::GaussianVMF,
-    center::S.Pose,
+    center::Pose,
     positionStdev::Real,
     orientationKappa::Real,
 )

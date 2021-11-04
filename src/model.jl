@@ -1,16 +1,10 @@
 import Gen: @gen, Unfold, uniform
 import Gen
 import GenDirectionalStats: uniform_rot3
-import GenSceneGraphs
 import Parameters: @with_kw
-import MetaGraphs: MetaDiGraph
-S = GenSceneGraphs
-
-include("gaussian_vmf.jl")
+import PoseComposition: Pose
 
 
-AGENT_SHAPE = S.Cylinder(0.1, 0.3)
-TEST_BOX_SHAPE = S.Box(0.1, 0.1, 0.1)
 Bounds = @NamedTuple{xmin::Real, xmax::Real, ymin::Real, ymax::Real, zmin::Real, zmax::Real}
 get_num_objects(trace) = Gen.get_args(trace)[2].num_objects
 
@@ -42,30 +36,30 @@ end
 ### Static Model ###
 ####################
 
-@gen function init_object_pose(hypers)::S.Pose
+@gen function init_object_pose(hypers)::Pose
     bounds = hypers.scene_pose_bounds
     x ~ uniform(bounds.xmin, bounds.xmax)
     y ~ uniform(bounds.ymin, bounds.ymax)
     z ~ uniform(bounds.zmin, bounds.zmax)
     rot ~ uniform_rot3()
-    return S.Pose(x, y, z, rot)
+    return Pose(x, y, z, rot)
 end
 
-@gen function init_agent_pose(hypers)::S.Pose
+@gen function init_agent_pose(hypers)::Pose
     bounds = hypers.scene_pose_bounds
     x ~ uniform(bounds.xmin, bounds.xmax)
     y ~ uniform(bounds.ymin, bounds.ymax)
     z ~ uniform(bounds.zmin, bounds.zmax)
     rot ~ uniform_rot3()
-    return S.Pose(x, y, z, rot)
+    return Pose(x, y, z, rot)
 end
 
-@gen function obs_model(g::MetaDiGraph, hypers::Hypers)
-    g = deepcopy(g)
-    agent_pose = S.getAbsolutePose(g, :agent)
-    S.removeObject!(g, :agent)
-    observed_poses = S.Pose[]
-    for (name, pose) in S.floatingPosesOf(g)
+@gen function obs_model(poses::Vector{Pose}, hypers::Hypers)
+    poses = deepcopy(poses)
+    agent_pose = pop!(poses)
+    observed_poses = Pose[]
+    for (i, pose) in enumerate(poses)
+        name = (:obj, i)
         rel_pose = pose / agent_pose
         observed_pose = {name} ~ gaussianVMF(rel_pose, hypers.obs_pos_stdev, hypers.obs_rot_conc)
         push!(observed_poses, observed_pose)
@@ -74,17 +68,15 @@ end
 end
 
 @gen function static_model(hypers)
-    agent_pose = {:agent} ~ init_agent_pose(hypers)
-    g = S.SceneGraph()
-    S.addObject!(g, :agent, AGENT_SHAPE)
-    S.setPose!(g, :agent, agent_pose)
+    poses = Pose[]
     for i in 1:hypers.num_objects
         pose = {(:obj, i)} ~ init_object_pose(hypers)
-        S.addObject!(g, (:obj, i), TEST_BOX_SHAPE)
-        S.setPose!(g, (:obj, i), pose)
+        push!(poses, pose)
     end
-    {:obs} ~ obs_model(g, hypers)
-    return g
+    agent_pose = {:agent} ~ init_agent_pose(hypers)
+    push!(poses, agent_pose)
+    {:obs} ~ obs_model(poses, hypers)
+    return poses
 end
 
 
@@ -92,36 +84,34 @@ end
 ### Dynamic Model ###
 #####################
 
-@gen function step_agent_forward(pose::S.Pose, hypers::Hypers)::S.Pose
+@gen function step_agent_forward(pose::Pose, hypers::Hypers)::Pose
     # TODO add velocity model, truncated normal
     x ~ normal(pose.pos[1], hypers.pos_drift_length)
     y ~ normal(pose.pos[2], hypers.pos_drift_length)
     z ~ normal(pose.pos[3], hypers.pos_drift_length)
     rot ~ vmf_rot3(pose.orientation, hypers.rot_drift_conc)
-    return S.Pose(x, y, z, rot)
+    return Pose(x, y, z, rot)
 end
 
 @gen function step_forward(
     t::Int,
-    prev_g::Union{MetaDiGraph,Nothing},
+    prev_poses::Union{Vector{Pose},Nothing},
     hypers::Hypers,
 )
-    if prev_g == nothing  ################################ initial time step
-        g = S.SceneGraph()
+    if prev_poses == nothing  ################################ initial time step
+        poses = Pose[]
         for i in 1:hypers.num_objects
             pose = {(:obj, i)} ~ init_object_pose(hypers)
-            S.addObject!(g, (:obj, i), TEST_BOX_SHAPE)
-            S.setPose!(g, (:obj, i), pose)
+            push!(poses, pose)
         end
-        S.addObject!(g, :agent, AGENT_SHAPE)
         agent_pose = {:agent} ~ init_agent_pose(hypers)
-    else  ################################################ step dynamics forward
-        g = deepcopy(prev_g)
-        agent_pose = {:agent} ~ step_agent_forward(S.getAbsolutePose(prev_g, :agent), hypers)
+        push!(poses, agent_pose)
+    else  #################################################### step dynamics forward
+        poses = deepcopy(prev_poses)
+        poses[end] = {:agent} ~ step_agent_forward(prev_poses[end], hypers)
     end
-    S.setPose!(g, :agent, agent_pose)
-    {:obs} ~ obs_model(g, hypers)
-    return g
+    {:obs} ~ obs_model(poses, hypers)
+    return poses
 end
 
 steps = Gen.Unfold(step_forward)
@@ -129,6 +119,6 @@ steps = Gen.Unfold(step_forward)
 @gen function model(num_time_steps::Int, hypers::Hypers)
     @assert !isnothing(hypers.pos_drift_length)
     @assert !isnothing(hypers.rot_drift_conc)
-    gs ~ steps(num_time_steps, nothing, hypers)
-    return MetaDiGraph[gs...]
+    all_poses = scenes ~ steps(num_time_steps, nothing, hypers)
+    return Vector{Pose}[all_poses...]
 end
