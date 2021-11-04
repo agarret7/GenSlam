@@ -10,7 +10,7 @@ git clone git@github.com:agarret7/GenSlam.jl.git GenSlam
 cd GenSlam
 ```
 
-2. Start the notebooks
+2. Start the Jupyter server
 ```shell
 julia --project -e "using IJulia; notebook()"
 ```
